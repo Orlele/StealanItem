@@ -1,0 +1,253 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>STEAL AN ITEM</title>
+<style>
+html,body{height:100%;margin:0;overflow:hidden;background:#7fb2e5;font-family:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;color:#fff}
+canvas{display:block}
+#hud{position:fixed;top:12px;left:12px;font-weight:700;font-size:18px;text-shadow:0 2px 4px #000;line-height:1.5;pointer-events:none}
+#hud small{display:block;font-size:13px;font-weight:500;opacity:.9}
+#wanted{position:fixed;top:12px;right:16px;font-size:26px;font-weight:900;color:#ff3b3b;text-shadow:0 2px 6px #000;display:none;animation:bl .5s infinite alternate;pointer-events:none}
+@keyframes bl{from{opacity:1}to{opacity:.25}}
+#msg{position:fixed;left:0;right:0;top:22%;text-align:center;font-size:26px;font-weight:800;text-shadow:0 3px 8px #000;pointer-events:none;opacity:0;transition:opacity .3s;padding:0 16px}
+#hint{position:fixed;bottom:10px;left:0;right:0;text-align:center;font-size:13px;opacity:.85;text-shadow:0 1px 3px #000;pointer-events:none}
+#menu{position:fixed;inset:0;display:flex;align-items:center;justify-content:center;background:rgba(10,14,28,.8);padding:16px}
+.card{background:#141a2c;border:1px solid rgba(255,255,255,.15);border-radius:18px;padding:28px;max-width:470px;text-align:center}
+h1{margin:0 0 6px;font-size:40px;letter-spacing:2px}h1 span{color:#ffd23f}
+.sub{color:#a9b4cf;margin:0 0 14px}#mt{color:#ffd23f;font-weight:700;margin:0 0 12px}
+button{background:#ffd23f;color:#201800;border:0;border-radius:10px;font-size:20px;font-weight:800;padding:13px 40px;cursor:pointer}
+.help{margin-top:16px;color:#a9b4cf;font-size:13.5px;line-height:1.65;text-align:left}.help b{color:#fff}
+#shop{position:fixed;inset:0;display:none;align-items:center;justify-content:center;background:rgba(5,8,18,.78);padding:12px;overflow:auto;z-index:5}
+#shop .card{text-align:left;width:min(560px,100%)}#shop b{display:block;margin-top:10px}#shop small{font-weight:400;color:#a9b4cf}
+.it{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:9px 12px;margin:6px 0;border-radius:10px;background:rgba(255,255,255,.07);font-size:14px}
+.it.on{outline:2px solid #ffd23f}.it button{font-size:14px;padding:7px 14px;white-space:nowrap}
+#shopbtn{position:fixed;bottom:34px;right:14px;font-size:14px;padding:8px 14px}
+</style>
+</head>
+<body>
+<div id="hud"></div><div id="wanted">🚨 WANTED — RUN TO BASE!</div><div id="msg"></div>
+<div id="hint">WASD move · Mouse look (click game) or ←/→ · Space jump · B shop (at base) · Run on treadmills to get faster</div>
+<div id="menu"><div class="card">
+<h1>STEAL AN <span>ITEM</span></h1>
+<p class="sub">Train. Steal. Escape the cops. Earn <b>$3000</b> in total to win. Spend cash on pets &amp; outfits!</p>
+<p id="mt"></p>
+<button id="play">PLAY</button>
+<div class="help"><b>1. Train:</b> run forward on the treadmills south of your base to gain speed. Faster belts give more speed, but push you back harder.<br>
+<b>2. Steal:</b> walk into an item in the stores up north. Better stores need more speed to enter (look for the gates).<br>
+<b>3. Escape:</b> police chase you the moment you steal. Reach the green BASE circle to bank the cash. If they catch you, you lose the item and $25.</div>
+</div></div>
+<button id="shopbtn">🛒 Shop (B)</button>
+<div id="shop"><div class="card"><h1 style="font-size:30px">🛒 <span>SHOP</span></h1><p id="sm" class="sub"></p><div id="sl"></div><button id="sx" style="margin-top:12px;width:100%">Close (B)</button></div></div>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script>window.THREE||document.write('<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/build/three.min.js"><\/script>')</script>
+<script>window.THREE||document.write('<script src="three.min.js"><\/script>')</script>
+<script>
+addEventListener('error',e=>{const m=document.getElementById('mt');if(m){m.textContent='⚠ Error: '+e.message;document.getElementById('menu').style.display='flex'}});
+if(!window.THREE){document.getElementById('mt').innerHTML='⚠ The 3D engine (three.js) could not load.<br>Check your internet / ad-blocker, or see the fix below.';
+ document.getElementById('play').onclick=()=>alert('three.js did not load.\n\nFix: download https://cdn.jsdelivr.net/npm/three@0.128.0/build/three.min.js and save it as three.min.js in the SAME folder as this HTML file, then refresh.')}
+</script>
+<script>
+if(!window.THREE)throw new Error('three.js missing');
+const R=13,WIN=3000,rnd=(a,b)=>a+Math.random()*(b-a),clamp=(v,a,b)=>Math.max(a,Math.min(b,v));
+const scene=new THREE.Scene();scene.background=new THREE.Color(0x7fb2e5);scene.fog=new THREE.Fog(0x7fb2e5,45,190);
+const cam=new THREE.PerspectiveCamera(70,innerWidth/innerHeight,.1,400);
+const ren=new THREE.WebGLRenderer({antialias:true});ren.setPixelRatio(Math.min(devicePixelRatio,2));ren.setSize(innerWidth,innerHeight);document.body.appendChild(ren.domElement);
+addEventListener('resize',()=>{cam.aspect=innerWidth/innerHeight;cam.updateProjectionMatrix();ren.setSize(innerWidth,innerHeight)});
+scene.add(new THREE.HemisphereLight(0xffffff,0x5a6a7a,.95));const sun=new THREE.DirectionalLight(0xffffff,.65);sun.position.set(30,60,20);scene.add(sun);
+
+const mat=(c,e=0)=>new THREE.MeshLambertMaterial({color:c,emissive:e?c:0,emissiveIntensity:e});
+function box(w,h,d,c,x,y,z,p=scene){const m=new THREE.Mesh(new THREE.BoxGeometry(w,h,d),mat(c));m.position.set(x,y,z);p.add(m);return m}
+function label(t,col='#ffffff',s=1){const c=document.createElement('canvas');c.width=512;c.height=128;const g=c.getContext('2d');g.font='bold 54px system-ui,sans-serif';g.textAlign='center';g.lineWidth=10;g.strokeStyle='#000';g.fillStyle=col;g.strokeText(t,256,80);g.fillText(t,256,80);
+  const sp=new THREE.Sprite(new THREE.SpriteMaterial({map:new THREE.CanvasTexture(c),transparent:true}));sp.scale.set(16*s,4*s,1);return sp}
+
+// ---------- world ----------
+const LV=[
+ {zc:-60,col:0x59606e,name:'LEVEL 1 · Corner Store',items:[['Teddy Bear',15,0xc98a4b,'s'],['Soda Can',20,0xff4040,'c'],['Radio',30,0x333333,'b'],['Sneakers',40,0xffffff,'b']]},
+ {zc:-135,col:0x6a4a8a,name:'LEVEL 2 · Jewelry Shop',items:[['Watch',60,0xc0c0c0,'c'],['Diamond Ring',100,0x66e0ff,'o'],['Laptop',120,0x8a8a8a,'b'],['Gold Chain',150,0xffd700,'t']]},
+ {zc:-215,col:0x8a7a2a,name:'LEVEL 3 · Museum Vault',items:[['Gold Bar',250,0xffd700,'b'],['Royal Crown',350,0xffcc00,'n'],['Ruby',400,0xff2060,'o'],['Golden Statue',500,0xffd54a,'c']]}];
+const GATES=[null,{z:-100,req:8,open:false},{z:-180,req:18,open:false}];
+box(70,1,320,0x3f4a3c,0,-.5,-105);
+const hubF=new THREE.Mesh(new THREE.CircleGeometry(R,48),new THREE.MeshLambertMaterial({color:0x2f8a46}));hubF.rotation.x=-Math.PI/2;hubF.position.y=.03;scene.add(hubF);
+const ring=new THREE.Mesh(new THREE.RingGeometry(R-.5,R,48),new THREE.MeshBasicMaterial({color:0x7dff9a}));ring.rotation.x=-Math.PI/2;ring.position.y=.05;scene.add(ring);
+const safe=box(2.4,2,2.4,0xffd23f,0,1,-2);safe.material=mat(0xffd23f,.3);const bl=label('BASE (safe zone)','#9dffb0');bl.position.set(0,5,-2);scene.add(bl);
+LV.forEach((lv,i)=>{box(60,.06,60,lv.col,0,.04,lv.zc);const t=label(lv.name,'#ffe27a',1.2);t.position.set(0,9,lv.zc+27);scene.add(t);
+  for(const sx of[-27,27])for(let k=-2;k<=2;k++)box(3,6,8,0x2a2f3c,sx,3,lv.zc+k*11)});
+GATES.forEach((g,i)=>{if(!g)return;g.bar=new THREE.Mesh(new THREE.PlaneGeometry(60,10),new THREE.MeshBasicMaterial({color:0xff2222,transparent:true,opacity:.38,side:THREE.DoubleSide}));g.bar.position.set(0,5,g.z);scene.add(g.bar);
+  g.lbl=label('GATE: needs Speed '+g.req,'#ff8a8a',1.1);g.lbl.position.set(0,11,g.z);scene.add(g.lbl)});
+// treadmills
+const TM=[{x:-9,belt:6,g:.18,n:'SLOW +'},{x:0,belt:10,g:.3,n:'FAST ++'},{x:9,belt:15,g:.45,n:'TURBO +++'}],TCZ=24;
+const stripe=(()=>{const c=document.createElement('canvas');c.width=64;c.height=64;const g=c.getContext('2d');g.fillStyle='#2b2f3a';g.fillRect(0,0,64,64);g.fillStyle='#ffd23f';g.fillRect(0,0,64,10);return c})();
+TM.forEach(t=>{box(7,.5,16,0x1d2029,t.x,.25,TCZ);box(.4,1,16,0xaa2222,t.x-3.5,.6,TCZ);box(.4,1,16,0xaa2222,t.x+3.5,.6,TCZ);
+  t.tex=new THREE.CanvasTexture(stripe);t.tex.wrapS=t.tex.wrapT=THREE.RepeatWrapping;t.tex.repeat.set(1,7);
+  const b=new THREE.Mesh(new THREE.PlaneGeometry(6.4,15.6),new THREE.MeshBasicMaterial({map:t.tex}));b.rotation.x=-Math.PI/2;b.position.set(t.x,.52,TCZ);scene.add(b);
+  const l=label(t.n,'#ffd23f',.8);l.position.set(t.x,4.5,TCZ-8);scene.add(l)});
+const GLOW=(()=>{const c=document.createElement('canvas');c.width=c.height=64;const g=c.getContext('2d'),r=g.createRadialGradient(32,32,2,32,32,32);r.addColorStop(0,'rgba(255,255,255,1)');r.addColorStop(1,'rgba(255,255,255,0)');g.fillStyle=r;g.fillRect(0,0,64,64);return new THREE.CanvasTexture(c)})();
+const SM=c=>new THREE.MeshStandardMaterial({color:c,metalness:.45,roughness:.35,emissive:c,emissiveIntensity:.2});
+function itemMesh(d,sc=1,halo=true){const g=new THREE.Group(),c=d[2],n=d[0],T=THREE;
+  const A=(ge,col,x=0,y=0,z=0)=>{const m=new T.Mesh(ge,SM(col));m.position.set(x,y,z);g.add(m);return m};
+  if(n==='Teddy Bear'){A(new T.SphereGeometry(.55,16,12),c);A(new T.SphereGeometry(.38,16,12),c,0,.7,0);for(const x of[-.28,.28])A(new T.SphereGeometry(.15,8,8),c,x,1.02,0);A(new T.SphereGeometry(.15,8,8),0xe8c9a0,0,.62,.32)}
+  else if(n==='Soda Can'){A(new T.CylinderGeometry(.35,.35,.95,16),c);A(new T.CylinderGeometry(.3,.35,.08,16),0xcccccc,0,.5,0);A(new T.CylinderGeometry(.36,.36,.25,16),0xffffff)}
+  else if(n==='Diamond Ring'){A(new T.TorusGeometry(.45,.09,10,24),0xffd700,0,-.1,0);A(new T.OctahedronGeometry(.3),c,0,.5,0)}
+  else if(n==='Royal Crown'){A(new T.CylinderGeometry(.55,.5,.4,16),c);for(let i=0;i<5;i++){const a=i/5*6.283;A(new T.ConeGeometry(.13,.45,6),c,Math.cos(a)*.45,.4,Math.sin(a)*.45)}A(new T.SphereGeometry(.12,8,8),0xff2060,0,.05,.52)}
+  else if(n==='Gold Bar'){A(new T.BoxGeometry(1,.3,.5),c,0,-.2,0);A(new T.BoxGeometry(1,.3,.5),c,0,.12,0)}
+  else if(n==='Golden Statue'){A(new T.CylinderGeometry(.5,.6,.3,12),c,0,-.5,0);A(new T.CylinderGeometry(.25,.4,.8,12),c,0,0,0);A(new T.SphereGeometry(.28,12,10),c,0,.65,0)}
+  else A(geo(d[3]),c);
+  if(halo){const s=new T.Sprite(new T.SpriteMaterial({map:GLOW,color:c,blending:T.AdditiveBlending,transparent:true,depthWrite:false,opacity:.7}));s.scale.set(3.4,3.4,1);g.add(s)}
+  g.scale.setScalar(sc);return g}
+const slots=[];
+function geo(k){return k==='s'?new THREE.SphereGeometry(.6,12,10):k==='c'?new THREE.CylinderGeometry(.4,.4,.9,12):k==='o'?new THREE.OctahedronGeometry(.65):k==='t'?new THREE.TorusGeometry(.5,.16,8,18):k==='n'?new THREE.ConeGeometry(.65,.9,6):new THREE.BoxGeometry(.95,.6,.7)}
+function fill(s){const d=LV[s.lvl-1].items[Math.floor(Math.random()*4)];s.item=d;s.mesh=itemMesh(d);s.mesh.position.set(s.x,2,s.z);scene.add(s.mesh)}
+LV.forEach((lv,i)=>{for(const x of[-16,0,16])for(const dz of[12,-12]){const s={x,z:lv.zc+dz,lvl:i+1,mesh:null,t:0};box(1.7,.8,1.7,0x343a4a,s.x,.4,s.z);slots.push(s);fill(s)}});
+
+// ---------- map decor ----------
+(function(){
+ const sk=document.createElement('canvas');sk.width=4;sk.height=256;const g=sk.getContext('2d'),gr=g.createLinearGradient(0,0,0,256);gr.addColorStop(0,'#2f6fd0');gr.addColorStop(.6,'#8fc4f5');gr.addColorStop(1,'#d8ecff');g.fillStyle=gr;g.fillRect(0,0,4,256);scene.background=new THREE.CanvasTexture(sk);
+ const gc=document.createElement('canvas');gc.width=gc.height=64;const h=gc.getContext('2d');h.fillStyle='#3f6b3a';h.fillRect(0,0,64,64);for(let i=0;i<70;i++){h.fillStyle=i%2?'rgba(80,140,70,.5)':'rgba(40,90,45,.5)';h.fillRect(Math.random()*64,Math.random()*64,3,3)}
+ const gt=new THREE.CanvasTexture(gc);gt.wrapS=gt.wrapT=THREE.RepeatWrapping;gt.repeat.set(40,40);
+ const big=new THREE.Mesh(new THREE.PlaneGeometry(400,420),new THREE.MeshLambertMaterial({map:gt}));big.rotation.x=-Math.PI/2;big.position.set(0,-.55,-105);scene.add(big);
+ for(let i=0;i<70;i++){const x=(Math.random()<.5?-1:1)*rnd(34,75),z=rnd(-262,50),t=new THREE.Group(),tr=new THREE.Mesh(new THREE.CylinderGeometry(.4,.55,3,8),mat(0x6b4a2b));tr.position.y=1.5;t.add(tr);
+   for(let k=0;k<3;k++){const c=new THREE.Mesh(new THREE.ConeGeometry(2.6-k*.7,3.2,8),mat(k%2?0x2f8f46:0x277a3a));c.position.y=4+k*1.8;t.add(c)}t.scale.setScalar(rnd(.8,1.6));t.position.set(x,0,z);scene.add(t)}
+ for(let z=34;z>-250;z-=26)for(const x of[-31,31]){box(.3,8,.3,0x333a46,x,4,z);const b=new THREE.Mesh(new THREE.SphereGeometry(.6,10,8),new THREE.MeshBasicMaterial({color:0xfff2b0}));b.position.set(x,8.3,z);scene.add(b);
+   const s=new THREE.Sprite(new THREE.SpriteMaterial({map:GLOW,color:0xffe08a,blending:THREE.AdditiveBlending,transparent:true,depthWrite:false}));s.scale.set(6,6,1);s.position.copy(b.position);scene.add(s)}
+ LV.forEach(lv=>{const z=lv.zc-33;box(46,16,6,0x3a4054,0,8,z);box(8,9,.4,0x151822,0,4.5,z+3.1);for(let i=-3;i<=3;i++)for(let r=0;r<2;r++)if(i!==0||r)box(3.2,3,.3,Math.random()<.7?0xffe9a0:0x2a3040,i*6,6+r*5.5,z+3.1)});
+ for(let i=0;i<12;i++){const c=new THREE.Group();for(let k=0;k<4;k++){const s=new THREE.Mesh(new THREE.SphereGeometry(rnd(5,9),8,6),new THREE.MeshBasicMaterial({color:0xffffff,transparent:true,opacity:.9}));s.position.set(k*7,rnd(-1,1),rnd(-3,3));c.add(s)}c.position.set(rnd(-120,120),rnd(60,85),rnd(-260,20));scene.add(c)}
+ box(7,4,5,0xb04a4a,9,2,-6);box(8,.6,6,0x7a2a2a,9,4.3,-6);box(3,2.2,.2,0xffe9a0,9,2.4,-3.45);const sl=label('SHOP (B)','#ffd23f',.9);sl.position.set(9,7,-6);scene.add(sl);
+})();
+// ---------- characters ----------
+function person(body,police){const g=new THREE.Group(),T=THREE;g.legs=[];g.arms=[];g.mats={};
+  const sk=mat(0xf1c27d),shirt=g.mats.body=new T.MeshStandardMaterial({color:body,roughness:.55,metalness:.1});
+  const Q=(ge,m,x,y,z,par=g)=>{const o=new T.Mesh(ge,m);o.position.set(x,y,z);par.add(o);return o};
+  Q(new T.CylinderGeometry(.5,.58,1.25,16),shirt,0,1.55,0);Q(new T.CylinderGeometry(.6,.6,.14,16),mat(0x1a1a1a),0,.97,0);Q(new T.SphereGeometry(.46,16,12),sk,0,2.45,0);
+  for(const x of[-.17,.17]){Q(new T.SphereGeometry(.09,8,8),mat(0xffffff),x,2.5,.4);Q(new T.SphereGeometry(.045,8,8),mat(0x111111),x,2.5,.47)}
+  for(const x of[-.7,.7]){const a=new T.Group();a.position.set(x,2.0,0);Q(new T.CylinderGeometry(.15,.15,.85,10),shirt,0,-.42,0,a);Q(new T.SphereGeometry(.16,8,8),sk,0,-.9,0,a);g.add(a);g.arms.push(a)}
+  for(const x of[-.26,.26]){const p=new T.Group();p.position.set(x,.95,0);Q(new T.CylinderGeometry(.19,.17,.85,10),mat(police?0x15204a:0x2b2f3a),0,-.42,0,p);Q(new T.BoxGeometry(.34,.18,.5),mat(0x111111),0,-.86,.07,p);g.add(p);g.legs.push(p)}
+  if(police){Q(new T.CylinderGeometry(.5,.52,.28,14),mat(0x0a1030),0,2.85,0);Q(new T.BoxGeometry(.7,.06,.4),mat(0x0a1030),0,2.72,.4);Q(new T.BoxGeometry(.7,.16,.1),mat(0x111111),0,2.5,.42);Q(new T.SphereGeometry(.11,8,8),mat(0xffd23f),.28,1.85,.5);
+    g.l1=Q(new T.BoxGeometry(.4,.25,.4),new T.MeshBasicMaterial({color:0xff0000}),-.3,3.15,0);g.l2=Q(new T.BoxGeometry(.4,.25,.4),new T.MeshBasicMaterial({color:0x2266ff}),.3,3.15,0)}
+  else{const hat=g.mats.hat=new T.MeshStandardMaterial({color:0x222222,roughness:.8});Q(new T.SphereGeometry(.5,14,8,0,6.283,0,1.57),hat,0,2.62,0);Q(new T.BoxGeometry(.95,.22,.1),mat(0),0,2.45,.4);Q(new T.SphereGeometry(.55,10,8),mat(0x7a5a2a),0,1.7,-.68).scale.set(1,1.2,.7)}
+  g.sh=new T.Mesh(new T.CircleGeometry(.9,16),new T.MeshBasicMaterial({color:0,transparent:true,opacity:.35}));g.sh.rotation.x=-Math.PI/2;scene.add(g.sh);
+  scene.add(g);return g}
+const me=person(0x2f7bff,false);
+
+// ---------- state ----------
+let st,police=[],carry=null,carryMesh=null,msgT=0,yaw=0,pitch=.3,time=0,playing=false,gl=false;
+const inp={},P={x:0,y:0,z:8,vy:0,stat:1};
+function reset(){P.x=0;P.y=0;P.z=8;P.vy=0;P.stat=1;st=newSt();clearCops();applySkin();setPet(-1);shopOpen=false;document.getElementById('shop').style.display='none';dropCarry();yaw=0;GATES.forEach(g=>{if(!g)return;g.open=false;g.bar.visible=true;g.lbl.visible=true});slots.forEach(s=>{if(!s.mesh)fill(s)})}
+function clearCops(){police.forEach(p=>{scene.remove(p);scene.remove(p.sh)});police=[];document.getElementById('wanted').style.display='none';sirenG&&(sirenG.gain.value=0)}
+function dropCarry(){carry=null;if(carryMesh){me.remove(carryMesh);carryMesh=null}}
+function say(t,s=2.6){const m=document.getElementById('msg');m.textContent=t;m.style.opacity=1;msgT=s}
+const speedOf=()=>(6+P.stat*.7)*(carry?.93:1)*(1+petVal('sp'));
+const level=()=>1+(GATES[1].open?1:0)+(GATES[2].open?1:0);
+
+// ---------- audio ----------
+let ac=null,sirenG=null,sirenO=null;
+function initAudio(){if(ac)return;try{ac=new(window.AudioContext||window.webkitAudioContext)();sirenO=ac.createOscillator();sirenG=ac.createGain();sirenO.type='triangle';sirenG.gain.value=0;sirenO.connect(sirenG);sirenG.connect(ac.destination);sirenO.start()}catch(e){ac=null}}
+function beep(f,d=.15,v=.1,type='sine'){if(!ac)return;const o=ac.createOscillator(),g=ac.createGain(),t=ac.currentTime;o.type=type;o.frequency.value=f;g.gain.setValueAtTime(v,t);g.gain.exponentialRampToValueAtTime(.001,t+d);o.connect(g);g.connect(ac.destination);o.start(t);o.stop(t+d)}
+
+// ---------- gameplay ----------
+function steal(s){const d=s.item;carry={n:d[0],v:d[1],lvl:s.lvl,d};scene.remove(s.mesh);s.mesh=null;s.t=25;
+  carryMesh=itemMesh(d,.7,false);carryMesh.position.y=3.7;me.add(carryMesh);beep(500,.2,.12,'square');
+  const n=s.lvl,hd=Math.hypot(P.x,P.z)||1;
+  for(let i=0;i<n;i++){const p=person(0x1d3fa8,true);const dist=22+i*5;p.position.set(clamp(P.x+P.x/hd*dist+rnd(-6,6),-28,28),0,clamp(P.z+P.z/hd*dist,-246,36));p.alert=1.2+i*.4;p.sp=7+n*2.4;police.push(p)}
+  document.getElementById('wanted').style.display='block';say('Stole '+d[0]+'! Police are coming — get back to BASE!',3)}
+function arrest(){const lost=Math.min(st.money,25);st.money-=lost;clearCops();dropCarry();P.x=0;P.z=8;P.y=0;beep(150,.5,.2,'sawtooth');say('Busted! You lost the item'+(lost?' and $'+lost:'')+'.',3)}
+function bank(){const v=Math.round(carry.v*(1+petCash()));st.money+=v;st.earned+=v;if(st.pet>=0){st.worn.unshift(carry.d);st.worn.length=Math.min(3,st.worn.length);dressPet()}beep(880,.12,.12);setTimeout(()=>beep(1320,.25,.12),110);say('Banked '+carry.n+'  +$'+v,2.5);dropCarry();clearCops();
+  if(st.earned>=WIN){playing=false;document.exitPointerLock&&document.exitPointerLock();document.getElementById('mt').textContent='🏆 You earned $'+st.earned+' and beat the game!';document.getElementById('play').textContent='PLAY AGAIN';document.getElementById('menu').style.display='flex'}}
+function groundAt(x,z){for(const t of TM)if(Math.abs(x-t.x)<3.5&&Math.abs(z-TCZ)<8)return .5;return 0}
+
+function update(dt){
+  time+=dt;
+  if(inp.ArrowLeft||inp.KeyQ)yaw+=2*dt;if(inp.ArrowRight||inp.KeyE)yaw-=2*dt;
+  const f=(inp.KeyW||inp.ArrowUp?1:0)-(inp.KeyS||inp.ArrowDown?1:0),s=(inp.KeyD?1:0)-(inp.KeyA?1:0);
+  const fx=-Math.sin(yaw),fz=-Math.cos(yaw),rx=Math.cos(yaw),rz=-Math.sin(yaw);
+  let dx=fx*f+rx*s,dz=fz*f+rz*s;const m=Math.hypot(dx,dz);if(m>0){dx/=m;dz/=m}
+  const sp=speedOf();P.x+=dx*sp*dt;P.z+=dz*sp*dt;
+  // treadmills
+  const gy=groundAt(P.x,P.z);
+  if(gy>0&&P.y<=gy+.15){const t=TM.find(t=>Math.abs(P.x-t.x)<3.5);P.z+=t.belt*.8*dt;if(f>0&&P.stat<40)P.stat+=t.g*dt*(dz<-.3?1:.3)}
+  TM.forEach(t=>t.tex.offset.y+=t.belt*dt*.08);
+  // jump
+  if(inp.Space&&P.y<=gy+.01&&P.vy===0)P.vy=11;P.vy-=30*dt;P.y+=P.vy*dt;const g2=groundAt(P.x,P.z);if(P.y<=g2){P.y=g2;P.vy=0}
+  // bounds & gates
+  P.x=clamp(P.x,-29,29);P.z=clamp(P.z,-248,38);
+  for(let i=1;i<=2;i++){const g=GATES[i];if(!g.open&&P.stat>=g.req){g.open=true;g.bar.visible=false;scene.remove(g.lbl);g.lbl=label('GATE OPEN','#9dffb0',1.1);g.lbl.position.set(0,11,g.z);scene.add(g.lbl);beep(700,.3,.1);say('Gate unlocked — Level '+level()+' stores!',3)}
+    if(!g.open&&P.z<g.z+1.2&&P.z>g.z-6)P.z=g.z+1.2}
+  // player model
+  me.position.set(P.x,P.y,P.z);if(m>0)me.rotation.y+=((Math.atan2(dx,dz)-me.rotation.y+Math.PI*3)%(Math.PI*2)-Math.PI)*Math.min(1,dt*12);
+  me.legs[0].rotation.x=m>0?Math.sin(time*(8+sp*.5))*.9:0;me.legs[1].rotation.x=-me.legs[0].rotation.x;me.arms[0].rotation.x=-me.legs[0].rotation.x*.8;me.arms[1].rotation.x=-me.arms[0].rotation.x;
+  // items
+  for(const s2 of slots){if(s2.mesh){s2.mesh.rotation.y+=dt*2;s2.mesh.position.y=2+Math.sin(time*3+s2.x)*.2;
+      if(!carry&&Math.hypot(s2.x-P.x,s2.z-P.z)<2.1&&P.y<2)steal(s2)}
+    else{s2.t-=dt;if(s2.t<=0)fill(s2)}}
+  if(carryMesh)carryMesh.rotation.y+=dt*3;
+  const inBase=Math.hypot(P.x,P.z)<R-1;
+  if(carry&&inBase)bank();
+  // police
+  for(const p of police){p.alert-=dt;const cd=Math.hypot(P.x-p.position.x,P.z-p.position.z);let mv=false;
+    if(p.alert<=0){let tx=P.x-p.position.x,tz=P.z-p.position.z;const d=Math.hypot(tx,tz)||1;
+      if(Math.hypot(P.x,P.z)<R+1&&Math.hypot(p.position.x,p.position.z)<R+3){tx=p.position.x;tz=p.position.z}
+      if(!(Math.hypot(P.x,P.z)<R+1&&Math.hypot(p.position.x,p.position.z)<R+3)){p.position.x+=tx/d*p.sp*dt;p.position.z+=tz/d*p.sp*dt;p.rotation.y=Math.atan2(tx,tz);mv=true}
+      else{const hx=p.position.x,hz=p.position.z,hd=Math.hypot(hx,hz)||1;p.position.x+=hx/hd*4*dt;p.position.z+=hz/hd*4*dt}}
+    p.position.x=clamp(p.position.x,-29,29);p.position.z=clamp(p.position.z,-248,38);
+    p.legs[0].rotation.x=mv?Math.sin(time*14)*.9:0;p.legs[1].rotation.x=-p.legs[0].rotation.x;p.arms[0].rotation.x=-p.legs[0].rotation.x*.8;p.arms[1].rotation.x=-p.arms[0].rotation.x;p.sh.position.set(p.position.x,.07,p.position.z);
+    const b=Math.floor(time*6)%2;p.l1.visible=!!b;p.l2.visible=!b;
+    if(cd<1.5&&!inBase&&p.alert<=0){arrest();break}}
+  if(sirenG&&ac){sirenG.gain.value=police.length?.025:0;sirenO.frequency.value=700+250*Math.sin(time*7)}
+  updPets(dt);
+  // camera
+  const tx=P.x,ty=P.y+1.8,tz=P.z;cam.position.set(tx+Math.sin(yaw)*Math.cos(pitch)*9,ty+2+Math.sin(pitch)*9,tz+Math.cos(yaw)*Math.cos(pitch)*9);cam.lookAt(tx,ty,tz);
+  // hud
+  document.getElementById('hud').innerHTML='💰 $'+st.money+' <small style="display:inline">· earned $'+st.earned+' / '+WIN+'</small><br>⚡ Speed '+P.stat.toFixed(1)+' <small>(run speed '+sp.toFixed(1)+')</small><small>Level '+level()+(level()<3?' · next gate needs Speed '+GATES[level()].req:' · max level')+'</small>'+(carry?'<small>🎒 Carrying: '+carry.n+' ($'+carry.v+')</small>':'');
+  if(msgT>0){msgT-=dt;if(msgT<=0)document.getElementById('msg').style.opacity=0}
+}
+
+// ---------- pets & shop ----------
+const PETS=[{n:'Puppy',cost:40,col:0xb9824a,ear:'f',sz:.8,sp:.04,cash:0,perk:'+4% speed'},{n:'Kitty',cost:120,col:0xa5abb8,ear:'p',sz:.75,sp:0,cash:.12,perk:'+12% cash'},{n:'Fox',cost:250,col:0xe8742a,ear:'p',sz:.85,sp:.1,cash:0,perk:'+10% speed'},{n:'Dragon',cost:600,col:0x35c46a,ear:'h',sz:1.2,sp:.12,cash:.15,perk:'+12% speed, +15% cash',wings:1}];
+const SKINS=[{n:'Classic Blue',cost:0,c:0x2f7bff,h:0x222222},{n:'Red Hoodie',cost:50,c:0xd83a3a,h:0x551111},{n:'Neon Green',cost:120,c:0x2cff7a,h:0x0a5a2a},{n:'Gold Suit',cost:300,c:0xffc933,h:0x6a4a00}];
+const newSt=()=>({money:0,earned:0,pet:-1,ownPets:[],skin:0,ownSkins:[0],worn:[]});
+let shopOpen=false,petMesh=null;
+const petVal=k=>st&&st.pet>=0?PETS[st.pet][k]:0,petCash=()=>petVal('cash');
+function applySkin(){const k=SKINS[st.skin];me.mats.body.color.setHex(k.c);me.mats.hat.color.setHex(k.h)}
+function buildPet(d){const g=new THREE.Group(),z=d.sz,M=c=>new THREE.MeshStandardMaterial({color:c,roughness:.6}),A=(ge,m,x,y,zz,p=g)=>{const o=new THREE.Mesh(ge,m);o.position.set(x,y,zz);p.add(o);return o};
+  A(new THREE.SphereGeometry(.55*z,14,10),M(d.col),0,.6*z,0).scale.set(1,.85,1.4);A(new THREE.SphereGeometry(.38*z,14,10),M(d.col),0,1.0*z,.7*z);
+  for(const x of[-.15,.15]){A(new THREE.SphereGeometry(.07*z,8,8),M(0xffffff),x*z,1.08*z,1.03*z);A(new THREE.SphereGeometry(.035*z,8,8),M(0x111111),x*z,1.08*z,1.09*z)}
+  A(new THREE.SphereGeometry(.09*z,8,8),M(0x222222),0,.98*z,1.08*z);
+  for(const x of[-1,1]){if(d.ear==='f')A(new THREE.BoxGeometry(.14*z,.4*z,.2*z),M(0x6b4423),x*.34*z,1.15*z,.7*z).rotation.z=x*.5;else if(d.ear==='p')A(new THREE.ConeGeometry(.12*z,.3*z,4),M(d.col),x*.22*z,1.4*z,.7*z);else A(new THREE.ConeGeometry(.07*z,.35*z,6),M(0xeeeeaa),x*.2*z,1.4*z,.7*z)}
+  g.tail=new THREE.Group();g.tail.position.set(0,.7*z,-.75*z);A(new THREE.CylinderGeometry(.06*z,.1*z,.6*z,8),M(d.col),0,.25*z,-.1*z,g.tail).rotation.x=-.6;g.add(g.tail);
+  g.wings=[];if(d.wings)for(const x of[-1,1]){const w=new THREE.Group();w.position.set(x*.4*z,.95*z,-.1*z);A(new THREE.BoxGeometry(1.1*z,.05*z,.7*z),M(0x1f9a50),x*.55*z,0,0,w);g.add(w);g.wings.push(w)}
+  g.hat=new THREE.Group();g.hat.position.set(0,1.5*z,.7*z);g.add(g.hat);g.back=new THREE.Group();g.back.position.set(0,1.2*z,-.2*z);g.add(g.back);g.side=new THREE.Group();g.side.position.set(.7*z,.8*z,.1*z);g.add(g.side);
+  g.sh=new THREE.Mesh(new THREE.CircleGeometry(.7*z,16),new THREE.MeshBasicMaterial({color:0,transparent:true,opacity:.3}));g.sh.rotation.x=-Math.PI/2;scene.add(g.sh);scene.add(g);return g}
+function dressPet(){if(!petMesh)return;const z=PETS[st.pet].sz;[petMesh.hat,petMesh.back,petMesh.side].forEach((sl,i)=>{while(sl.children.length)sl.remove(sl.children[0]);if(st.worn[i])sl.add(itemMesh(st.worn[i],(i?.38:.45)*z,false))})}
+function setPet(i){if(petMesh){scene.remove(petMesh);scene.remove(petMesh.sh);petMesh=null}st.pet=i;if(i<0)return;petMesh=buildPet(PETS[i]);petMesh.position.set(P.x+2,0,P.z+2);dressPet()}
+function updPets(dt){me.sh.position.set(P.x,groundAt(P.x,P.z)+.06,P.z);me.sh.scale.setScalar(clamp(1-P.y*.15,.5,1));
+  if(!petMesh)return;const p=petMesh,dx=P.x-p.position.x,dz=P.z-p.position.z,d=Math.hypot(dx,dz);
+  if(d>30){p.position.x=P.x+2;p.position.z=P.z+2}else if(d>3){const sp=Math.min(d-2.5,(speedOf()+3)*dt*1.2);p.position.x+=dx/d*sp;p.position.z+=dz/d*sp;p.rotation.y+=((Math.atan2(dx,dz)-p.rotation.y+Math.PI*3)%(Math.PI*2)-Math.PI)*Math.min(1,dt*10)}
+  p.position.y=(d>3?Math.abs(Math.sin(time*12))*.25:0)+(PETS[st.pet].wings?.8+Math.sin(time*3)*.2:0)+P.y*.2;p.tail.rotation.y=Math.sin(time*9)*.5;p.wings.forEach((w,i)=>w.rotation.z=(i?-1:1)*Math.sin(time*10)*.5);p.sh.position.set(p.position.x,.06,p.position.z)}
+function renderShop(){document.getElementById('sm').textContent='Your money: $'+st.money;let h='<b>🐾 Pets <small>— they wear the items you bank!</small></b>';
+  PETS.forEach((p,i)=>{const own=st.ownPets.includes(i);h+='<div class="it'+(st.pet===i?' on':'')+'"><span><b style="display:inline;margin:0">'+p.n+'</b> · '+p.perk+'</span><button data-k="p'+i+'">'+(st.pet===i?'Equipped':own?'Equip':'Buy $'+p.cost)+'</button></div>'});
+  h+='<b>🧥 Outfits</b>';SKINS.forEach((k,i)=>{const own=st.ownSkins.includes(i);h+='<div class="it'+(st.skin===i?' on':'')+'"><span>'+k.n+'</span><button data-k="s'+i+'">'+(st.skin===i?'Wearing':own?'Wear':'Buy $'+k.cost)+'</button></div>'});
+  document.getElementById('sl').innerHTML=h}
+function toggleShop(){if(!shopOpen&&Math.hypot(P.x,P.z)>R){say('Go back to your BASE to shop!',2);return}
+  shopOpen=!shopOpen;document.getElementById('shop').style.display=shopOpen?'flex':'none';if(shopOpen){document.exitPointerLock&&document.exitPointerLock();renderShop()}}
+document.getElementById('sl').addEventListener('click',e=>{const k=e.target.dataset&&e.target.dataset.k;if(!k)return;const i=+k.slice(1),isP=k[0]==='p',it=isP?PETS[i]:SKINS[i],own=isP?st.ownPets:st.ownSkins;
+  if(!own.includes(i)){if(st.money<it.cost){beep(180,.2,.12,'square');return}st.money-=it.cost;own.push(i);beep(900,.15,.1)}
+  if(isP)setPet(i);else{st.skin=i;applySkin()}renderShop()});
+document.getElementById('sx').addEventListener('click',toggleShop);document.getElementById('shopbtn').addEventListener('click',()=>playing&&toggleShop());
+
+// ---------- input ----------
+addEventListener('keydown',e=>{inp[e.code]=true;if(e.code==='KeyB'&&playing)toggleShop();if(playing&&(e.code==='Space'||e.code.startsWith('Arrow')))e.preventDefault()});
+addEventListener('keyup',e=>inp[e.code]=false);
+addEventListener('mousemove',e=>{if(gl&&playing){yaw-=e.movementX*.0025;pitch=clamp(pitch+e.movementY*.002,.05,.9)}});
+document.addEventListener('pointerlockchange',()=>gl=document.pointerLockElement===ren.domElement);
+ren.domElement.addEventListener('click',()=>{if(playing&&!gl)try{ren.domElement.requestPointerLock()}catch(e){}});
+document.getElementById('play').addEventListener('click',()=>{initAudio();if(ac&&ac.state==='suspended')ac.resume();reset();playing=true;document.getElementById('menu').style.display='none';document.getElementById('mt').textContent='';try{ren.domElement.requestPointerLock()}catch(e){}});
+
+let last=performance.now();
+function loop(t){const dt=Math.min((t-last)/1000,.05);last=t;
+  if(playing){if(!shopOpen)update(dt)}else{time+=dt;cam.position.set(Math.sin(time*.2)*40,18,10+Math.cos(time*.2)*30);cam.lookAt(0,2,-10)}
+  ren.render(scene,cam);requestAnimationFrame(loop)}
+st=newSt();requestAnimationFrame(loop);
+</script>
+</body>
+</html>
